@@ -23,6 +23,8 @@ RWStructuredBuffer<float4> SH_2_rgb;
 TextureCube<half4> _Env;
 SamplerState samplerLinearRepeat;
 
+#include <UnityCG.cginc>
+
 uint Hash(uint s)
 {
     s ^= 2747636419u;
@@ -45,30 +47,101 @@ float3 SampleColor(float3 direction)
     return tex.rgb;
 }
 
+float Harmonic(int l, int m, float3 w) {
+    switch (l) {
+        case 0:
+            return 1 / (2 * sqrt(PI));
+        case 1:
+            switch (m) {
+                case -1:
+                    return - sqrt(3) * w.y / (2 * sqrt(PI)); 
+                case 0:
+                    return sqrt(3) * w.z / (2 * sqrt(PI));
+                case 1:
+                    return - sqrt(3) * w.x / (2 * sqrt(PI));
+            };
+            break;
+           
+        case 2: 
+            switch (m) {
+                case -2:
+                    return sqrt(15) * w.y * w.x / (2 * sqrt(PI));
+                case -1:
+                    return - sqrt(15) * w.y * w.z / (2 * sqrt(PI));
+                case 0:
+                    return sqrt(5) * (3 * w.z*w.z - 1) / (4 * sqrt(PI));
+                case 1:
+                    return sqrt(15) * w.x * w.z / (2 * sqrt(PI));
+                case 2:
+                    return sqrt(15) * (w.x*w.x - w.y*w.y) / (4 * sqrt(PI));
+            }
+            break;
+    };
+    return 0;
+}
+
 [numthreads(1024, 1, 1)]
 void ComputeHarmonics(uint id : SV_DispatchThreadID)
 {
     const int THREADS = 1024;
     const int SAMPLES = 100;
     
-    // See SH.shader for more details
-    float4 results[7] = {
-        float4(0, 0, 0, 0), // SH_0_1_r
-        float4(0, 0, 0, 0), // SH_0_1_g
-        float4(0, 0, 0, 0), // SH_0_1_b
-        
-        float4(0, 0, 0, 0), // SH_2_r
-        float4(0, 0, 0, 0), // SH_2_g
-        float4(0, 0, 0, 0), // SH_2_b
-        
-        float4(0, 0, 0, 0), // SH_2_rgb
-    };
     
     // Populate results buffer using monte-carlo method.
     // You can see the Random(i) function. Use it just as with the previous task.
     
     // TASK: project light from _Env to spherical harmonic coefficients and store them in results[]
     
+    int N = 2000;
+
+    int l, m;
+    float3 resultColor[3][6]; 
+    for (l = 0; l < 3; l++) {
+        for (m = -l; m <= l; m++) {
+            resultColor[l][m + 2] = float3(0, 0, 0);       
+        }
+    }
+
+
+    float coefL[3] = {sqrt(4 * PI) * sqrt(PI) / 2,
+                     sqrt(4 * PI / 3) * sqrt(PI / 3),
+                      sqrt(4 * PI / 5) * sqrt(5 * PI / 8)};
+
+    for (int i = 0; i < N; i++) {
+        float theta = Random(2*i) * PI;
+        float alpha = Random(2*i + 1) * TWO_PI;
+        float3 w = float3(sin(theta) * cos(alpha), sin(theta)  * sin(alpha), cos(theta));
+        float3 sampleColor = SampleColor(w);
+        
+        for (l = 0; l < 3; l++) {
+            for (m = -l; m <= l; m++) {
+                resultColor[l][m + 2] += sampleColor * Harmonic(l, m, w);
+            }
+        }
+    }
+
+    for (l = 0; l < 3; l++) {
+        for (m = -l; m <= l; m++) {
+            resultColor[l][m + 2] /= N;
+            resultColor[l][m + 2] *= 1 / PI * coefL[l];
+        }
+    }
+
+    // See SH.shader for more details
+    float4 results[7] = {
+        float4(resultColor[1][1 + 2].r, resultColor[1][-1 + 2].r, resultColor[1][0 + 2].r, resultColor[0][0 + 2].r), // SH_0_1_r
+        float4(resultColor[1][1 + 2].g, resultColor[1][-1 + 2].g, resultColor[1][0 + 2].g, resultColor[0][0 + 2].g), // SH_0_1_g
+        float4(resultColor[1][1 + 2].b, resultColor[1][-1 + 2].b, resultColor[1][0 + 2].b, resultColor[0][0 + 2].b), // SH_0_1_b
+        
+        float4(resultColor[2][-2 + 2].r, resultColor[2][-1 + 2].r, resultColor[2][1 + 2].r, resultColor[2][0 + 2].r), // SH_2_r
+        float4(resultColor[2][-2 + 2].g, resultColor[2][-1 + 2].g, resultColor[2][1 + 2].g, resultColor[2][0 + 2].g), // SH_2_g
+        float4(resultColor[2][-2 + 2].b, resultColor[2][-1 + 2].b, resultColor[2][1 + 2].b, resultColor[2][0 + 2].b), // SH_2_b
+        
+        float4(resultColor[2][2 + 2].r, resultColor[2][2 + 2].g, resultColor[2][2 + 2].b, 0), // SH_2_rgb
+    };
+
+    ;
+
     SH_0_1_r[id] = results[0];
     SH_0_1_g[id] = results[1];
     SH_0_1_b[id] = results[2];

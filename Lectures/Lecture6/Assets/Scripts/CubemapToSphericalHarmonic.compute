@@ -130,13 +130,12 @@ void ComputeHarmonics(uint id : SV_DispatchThreadID)
     
     // TASK: project light from _Env to spherical harmonic coefficients and store them in results[]
     
-    int N = 1000;
+    int N = 100;
 
-    int l, m;
     float3 resultColor[3][6]; 
-    for (l = 0; l < 3; l++) {
-        for (m = -l; m <= l; m++) {
-            resultColor[l][m + 2] = float3(0, 0, 0);       
+    for (int l = 0; l < 3; l++) {
+        for (int m = 0; m < 6; m++) {
+            resultColor[l][m] = float3(0, 0, 0);
         }
     }
 
@@ -150,15 +149,15 @@ void ComputeHarmonics(uint id : SV_DispatchThreadID)
         float3 w = float3(sin(theta) * cos(alpha), sin(theta)  * sin(alpha), cos(theta));
         float3 sampleColor = SampleColor(w);
         
-        for (l = 0; l < 3; l++) {
-            for (m = -l; m <= l; m++) {
+        for (int l = 0; l < 3; l++) {
+            for (int m = -l; m <= l; m++) {
                 resultColor[l][m + 2] += sampleColor * Harmonic(l, m, w);
             }
         }
     }
 
-    for (l = 0; l < 3; l++) {
-        for (m = -l; m <= l; m++) {
+    for (int l = 0; l < 3; l++) {
+        for (int m = -l; m <= l; m++) {
             resultColor[l][m + 2] /= N;
             resultColor[l][m + 2] *= 1 / PI * Al[l] * Klm(l, m);
         }
@@ -176,8 +175,6 @@ void ComputeHarmonics(uint id : SV_DispatchThreadID)
         
         float4(resultColor[2][2 + 2].r, resultColor[2][2 + 2].g, resultColor[2][2 + 2].b, 0), // SH_2_rgb
     };
-
-    ;
 
     SH_0_1_r[id] = results[0];
     SH_0_1_g[id] = results[1];

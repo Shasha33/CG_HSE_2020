@@ -107,7 +107,7 @@
                 height += _StepLength * abs(tan);
             }
         }
-        depthDif = height;
+        depthDif = tex2D(_HeightMap, uv).x * _MaxHeight;
 #endif
 
         float3 worldLightDir = normalize(_WorldSpaceLightPos0.xyz);

@@ -30,6 +30,10 @@
         // texture coordinate for the normal map
         float2 uv : TEXCOORD5;
         float4 clip : SV_POSITION;
+
+        half3 normal : TEXCOORD7;
+        half3 tangent : TEXCOORD8;
+        half3 bitangent : TEXCOORD9;
     };
 
     // Vertex shader now also gets a per-vertex tangent vector.
@@ -47,6 +51,10 @@
         
         // compute bitangent from cross product of normal and tangent and output it
         
+        o.normal = wNormal;
+        o.tangent = wTangent;
+        o.bitangent = normalize(cross(wNormal, wTangent) * tangent.w);
+
         return o;
     }
 
@@ -67,15 +75,39 @@
     void frag (in v2f i, out half4 outColor : COLOR, out float outDepth : DEPTH)
     {
         float2 uv = i.uv;
-        
+        half3 normal = i.worldSurfaceNormal;
         float3 worldViewDir = normalize(i.worldPos.xyz - _WorldSpaceCameraPos.xyz);
+
+        half3 tangent = i.tangent;
+        half3 bitangent = -i.bitangent;
+        half3 wNormal = i.normal;
+
+        float3 viewDir = worldViewDir.x * tangent + worldViewDir.y * bitangent + worldViewDir.z * wNormal;
+        float4 clip = i.clip;
+
+        float tan = cross(worldViewDir, normal) / -dot(worldViewDir, normal);
+
+
 #if MODE_BUMP
         // Change UV according to the Parallax Offset Mapping
+        float height = 1 - tex2D(_HeightMap, uv).x;
+        float delta = height * _MaxHeight * tan;
+        uv -= delta * viewDir.xy;
 #endif   
     
         float depthDif = 0;
 #if MODE_POM | MODE_POM_SHADOWS    
-        // Change UV according to Parallax Occclusion Mapping
+        bool flag = 1;
+        float curHeight = _MaxHeight -  tex2D(_HeightMap, uv).x * _MaxHeight;
+        float height = 0;
+        for (int i = 0; i < _MaxStepCount; i++) {
+            if (curHeight > height) {
+                uv -= _StepLength * viewDir.xy;
+                curHeight = _MaxHeight - tex2D(_HeightMap, uv).x * _MaxHeight;
+                height += _StepLength * abs(tan);
+            }
+        }
+        depthDif = height;
 #endif
 
         float3 worldLightDir = normalize(_WorldSpaceLightPos0.xyz);
@@ -83,10 +115,11 @@
 #if MODE_POM_SHADOWS
         // Calculate soft shadows according to Parallax Occclusion Mapping, assign to shadow
 #endif
-        
-        half3 normal = i.worldSurfaceNormal;
+
 #if !MODE_PLAIN
         // Implement Normal Mapping
+        normal = UnpackNormal(tex2D(_NormalMap, uv));
+        normal = normal.x * tangent + normal.y * bitangent + normal.z * wNormal;
 #endif
 
         // Diffuse lightning
@@ -102,7 +135,7 @@
         // Return resulting color
         float3 texColor = tex2D(_MainTex, uv);
         outColor = half4((diffuseLight + specularLight + ambient) * texColor, 0);
-        outDepth = LinearEyeDepthToOutDepth(LinearEyeDepth(i.clip.z));
+        outDepth = LinearEyeDepthToOutDepth(LinearEyeDepth(clip.z - depthDif));
     }
     ENDCG
     
